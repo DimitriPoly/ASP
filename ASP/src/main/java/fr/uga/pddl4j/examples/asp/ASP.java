@@ -86,9 +86,10 @@ public class ASP extends AbstractPlanner {
      */
     @Override
     public Plan solve(final Problem problem) {
-
         TreeMap<Integer, Object> dico = new TreeMap<>();
         int index = 1;
+
+        ISolver solver = SolverFactory.newDefault();
 
 
         for (Fluent f : problem.getFluents()) {
@@ -100,118 +101,72 @@ public class ASP extends AbstractPlanner {
             index++;
         }
 
-        final int MAXVAR = 1000000;
-        final int NBCLAUSES = 500000;
+        try {
+            for (Action a : problem.getActions()) {
 
-        List<BitVector> listeConcat = new ArrayList<>();
+                List<Integer> clause = new ArrayList<>();
 
-            for (Action a : problem.getActions()){
-                listeConcat.add(a.getPrecondition().getPositiveFluents());
-                listeConcat.add(a.getPrecondition().getNegativeFluents());
+                for (int val : a.getPrecondition().getPositiveFluents().stream().toArray()) {     //Préconditions positives
+                    if (val != 0)
+                        clause.add(val);
+                }
+                for (int val : a.getPrecondition().getNegativeFluents().stream().toArray()) {     //Préconditions négatives
+                    if (val != 0)
+                        clause.add(val);
+                }
                 List<ConditionalEffect> effets = a.getConditionalEffects();
 
-                for (int i = 0; i < effets.size(); i++) {
-                    BitVector bv = effets.get(i).getEffect().getPositiveFluents();
+                for (int i = 0; i < effets.size(); i++) {                                        //Fluents positifs et négatifs des effets des actions
+                    int[] posFluents = effets.get(i).getEffect().getPositiveFluents().stream().toArray();
+                    int[] negFluents = effets.get(i).getEffect().getNegativeFluents().stream().toArray();
+                    int[] posFluentsInv = new int[posFluents.length];
+                    int[] negFluentsInv = new int[negFluents.length];
+
+                    for (int j = 0; j < posFluents.length; j++) {
+                        if (posFluentsInv[j] != 0) {
+                            posFluentsInv[j] = (posFluents[j] * -1);
+                            clause.add(posFluentsInv[j]);
+                        }
+                    }
+                    for (int j = 0; j < negFluents.length; j++) {
+                        if (negFluentsInv[j] != 0) {
+                            negFluentsInv[j] = (negFluentsInv[j] * -1);
+                            clause.add(negFluentsInv[j]);
+                        }
+                    }
                 }
-
-                for (ConditionalEffect c : ) {
-                    listeConcat.add(c.getEffect().getPositiveFluents());
-                    c.getEffect().getPositiveFluents()
-
-                }
-        }
-
-        ISolver solver = SolverFactory.newDefault();
-
-        // prepare the solver to accept MAXVAR variables. MANDATORY for MAXSAT solving
-        solver.newVar(MAXVAR);
-        solver.setExpectedNumberOfClauses(NBCLAUSES);
-        // Feed the solver using Dimacs format, using arrays of int
-        // (best option to avoid dependencies on SAT4J IVecInt)
-        for (int i=0;i<NBCLAUSES;i++) {
-            int [] clause = null;// get the clause from somewhere
-                // the clause should not contain a 0, only integer (positive or negative)
-                // with absolute values less or equal to MAXVAR
-                // e.g. int [] clause = {1, -3, 7}; is fine
-                // while int [] clause = {1, -3, 7, 0}; is not fine
-            try {
-                solver.addClause(new VecInt(clause)); // adapt Array to IVecInt
-            } catch (ContradictionException e) {
-                throw new RuntimeException(e);
+                int[] clause_int = clause.stream().mapToInt(i -> i).toArray();
+                solver.addClause(new VecInt(clause_int)); // adapt Array to IVecInt
             }
+        } catch (ContradictionException e) {
+            throw new RuntimeException(e);
         }
 
-        // we are done. Working now on the IProblem interface
-        IProblem iproblem = solver;
+        //IProblem iproblem = solver;
         try {
-            if (iproblem.isSatisfiable()) {
-                //todo
+            if (solver.isSatisfiable()) {
+                System.out.println("le problème est satisfiable");
+                for(int num : solver.model()){
+                    //on récupère les fluents et les actions dans notre dictionnaire
+                    Object result = dico.get(num);
+                    if (result instanceof Action) {
+                        Action a = (Action)result;
+                        System.out.println(a.getName());
+                    }
+                    if (result instanceof Fluent) {
+                        Fluent f = (Fluent)result;
+                        System.out.println(f.toString());
+                    }
+                    System.out.println(num);
+                }
             } else {
-                //todo
+                System.out.println("");
+
             }
         } catch (TimeoutException e) {
             throw new RuntimeException(e);
         }
 
-        //QUAND IL Y A UN "ET" ON FAIT UN \n, QUAND IL Y A UN "OU" ON MET UN ESPACE ET IL FAUT FINIR CHAQUE LIGNE PAR UN 0
-        //c c'est pour mettre un commentaire
-        //p c'est pour définir un problème, on met donc p <nbVariables> <nbLignes> au début de notre problème
-        //une ligne = une close
-
-
-        /*
-        objects A ?-block/B ?-block/table ?-X
-            predicates on(x,x)/clear(x)
-
-            1 -> on(A,B)
-            2 -> on(B,A)
-            3 -> on(A,table)
-            4 -> on(B,table)
-            5 -> clear(A)
-            6 -> clear(B)
-            7 -> clear(table) ? x
-         */
-
-        List<Fluent> fluents = problem.getFluents();
-        System.out.println("Fluents :" + fluents.toString() + "\n" + "longueur" + fluents.size());
-        List<Action> actions = problem.getActions();
-        System.out.println("Fluents :" + actions.get(1) + "\n" + "longueur" + actions.size());
-
-
-
-        /*
-         * GESTION DE L'ETAT INITIAL
-         * */
-        InitialState etatInitial = problem.getInitialState();
-        BitVector posFInit = etatInitial.getPositiveFluents();
-        BitVector negFInit = etatInitial.getNegativeFluents();
-
-        System.out.println("Fluents positifs de l'initiation"+posFInit.toString()+"\n");
-        System.out.println("Fluents negatifs de l'initiation"+negFInit.toString()+"\n");
-
-        /*
-         * GESTION DU BUT
-         * */
-        Condition but = problem.getGoal();
-        BitVector posFIBut = but.getPositiveFluents();
-        BitVector negFBut = but.getNegativeFluents();
-
-
-
-        System.out.println("Fluents positifs du but"+posFIBut.toString()+"\n");
-        System.out.println("Fluents negatifs du but"+negFBut.toString()+"\n");
-
-        System.out.println("Test affiche actions"+problem.getActions()+"\n");
-
-
-        /*if(etatInitial.equals(but)){
-            return plan;
-        }*/
-
-
-
-
-        // Return the plan found or null if the search fails.
         return null;
     }
 
@@ -228,26 +183,5 @@ public class ASP extends AbstractPlanner {
         } catch (IllegalArgumentException e) {
             LOGGER.fatal(e.getMessage());
         }
-
-
-        /**
-         * SAT4J*
-
-         ISolver solver = SolverFactory.newDefault();
-         solver.setTimeout(3600); // 1 hour timeout
-         Reader reader = new DimacsReader(solver);
-         PrintWriter out = new PrintWriter(System.out,true);
-         // CNF filename is given on the command line
-         try {
-         IProblem problem = reader.parseInstance(args[0]);
-         if (problem.isSatisfiable()) {
-         System.out.println("Satisfiable !");
-         reader.decode(problem.model(),out);
-         } else {
-         System.out.println("Unsatisfiable !");
-         }
-         } catch (Exception e) {
-         System.out.println("Problème au niveau du solver SAT (pour plus de détails retourner voir tous les catch)");
-         }*/
     }
 }
